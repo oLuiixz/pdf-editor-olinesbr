@@ -12,7 +12,44 @@ type TextBlock = {
   id: string; page: number; original: string; value: string;
   x: number; y: number; width: number; height: number; fontSize: number;
   baselineX: number; baselineY: number; isNew?: boolean;
+  pdfFontSize: number; pageScale: number; fontFamily: string;
+  backgroundColor: string; textColor: string;
 };
+
+function colorAt(canvas: HTMLCanvasElement, x: number, y: number): string {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "#ffffff";
+  const px = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+  const py = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+  const data = ctx.getImageData(px, py, 1, 1).data;
+  return `#${[data[0], data[1], data[2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function sampleTextColors(canvas: HTMLCanvasElement, x: number, y: number, width: number, height: number) {
+  const bg = colorAt(canvas, x + Math.max(1, width * .12), Math.max(0, y - 2));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { backgroundColor: bg, textColor: "#202124" };
+  const left = Math.max(0, Math.floor(x));
+  const top = Math.max(0, Math.floor(y));
+  const right = Math.min(canvas.width, Math.ceil(x + Math.max(2, width)));
+  const bottom = Math.min(canvas.height, Math.ceil(y + Math.max(2, height)));
+  const pixels = ctx.getImageData(left, top, Math.max(1, right-left), Math.max(1, bottom-top)).data;
+  const candidates: number[][] = [];
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r=pixels[i], g=pixels[i+1], b=pixels[i+2];
+    if (Math.abs(r-255)+Math.abs(g-255)+Math.abs(b-255) > 100) candidates.push([r,g,b]);
+  }
+  if (!candidates.length) return { backgroundColor: bg, textColor: "#202124" };
+  candidates.sort((a,b) => (a[0]+a[1]+a[2])-(b[0]+b[1]+b[2]));
+  const dark = candidates[Math.floor(candidates.length * .35)];
+  const hex = (v:number) => v.toString(16).padStart(2,"0");
+  return { backgroundColor: bg, textColor: `#${hex(dark[0])}${hex(dark[1])}${hex(dark[2])}` };
+}
+
+function pdfColor(hex: string) {
+  const value = hex.replace("#", "");
+  return { r: parseInt(value.slice(0,2),16)/255, g: parseInt(value.slice(2,4),16)/255, b: parseInt(value.slice(4,6),16)/255 };
+}
 
 const fmtBytes = (n: number) => n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
@@ -72,13 +109,18 @@ export default function Home() {
           if (!item.str?.trim() || !item.transform) continue;
           const tx = item.transform;
           const point = viewport.convertToViewportPoint(tx[4], tx[5]);
-          const fontSize = Math.max(7, Math.hypot(tx[2], tx[3]) * viewport.scale);
-          const width = Math.max(8, (item.width || item.str.length * fontSize * .45) * viewport.scale);
-          const height = Math.max(fontSize * 1.15, fontSize);
+          const pdfFontSize = Math.max(4, Math.hypot(tx[2], tx[3]));
+          const fontSize = Math.max(7, pdfFontSize * viewport.scale);
+          const width = Math.max(8, (item.width || item.str.length * pdfFontSize * .45) * viewport.scale);
+          const height = Math.max(fontSize * 1.2, fontSize);
+          const colors = sampleTextColors(canvas, point[0], point[1] - height, width, height);
+          const style = (textContent.styles as any)[item.fontName] || {};
           next.push({
             id: `p${page}-t${i}`, page, original: item.str, value: item.str,
             x: point[0], y: point[1] - height, width, height, fontSize,
-            baselineX: tx[4], baselineY: tx[5]
+            baselineX: tx[4], baselineY: tx[5], pdfFontSize, pageScale: viewport.scale,
+            fontFamily: style.fontFamily || "Helvetica",
+            backgroundColor: colors.backgroundColor, textColor: colors.textColor
           });
         }
         setBlocks((current) => {
@@ -87,7 +129,12 @@ export default function Home() {
             const old = previous.get(b.id);
             return old ? { ...b, value: old.value } : b;
           });
-          return [...current.filter((b) => b.page !== page), ...refreshed];
+          const newItems = current.filter((b) => b.page === page && b.isNew).map((b) => {
+            const point = viewport.convertToViewportPoint(b.baselineX, b.baselineY);
+            const height = Math.max(7, b.pdfFontSize * viewport.scale * 1.2);
+            return { ...b, x: point[0], y: point[1] - height, fontSize: b.pdfFontSize * viewport.scale, height, pageScale: viewport.scale };
+          });
+          return [...current.filter((b) => b.page !== page), ...refreshed, ...newItems];
         });
       } catch { setError("Falha ao renderizar esta página."); }
     }
@@ -104,8 +151,10 @@ export default function Home() {
   const addText = () => {
     const item: TextBlock = {
       id: `new-${Date.now()}`, page, original: "", value: "Novo texto",
-      x: 90, y: 110, width: 160, height: 28, fontSize: 18,
-      baselineX: 70, baselineY: 700, isNew: true
+      x: 90, y: 110, width: 180, height: 28, fontSize: 18,
+      baselineX: 90 / (1.15 * zoom), baselineY: 760 - 138 / (1.15 * zoom), isNew: true,
+      pdfFontSize: 14, pageScale: 1.15 * zoom, fontFamily: "Helvetica",
+      backgroundColor: "#ffffff", textColor: "#202124"
     };
     setBlocks((items) => [...items, item]); setSelected(item.id); setTool("select"); setSaved(false);
   };
@@ -116,26 +165,39 @@ export default function Home() {
     try {
       const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
       const out = await PDFDocument.load(pdfBytes);
-      const font = await out.embedFont(StandardFonts.Helvetica);
-      const scale = 1.15 * zoom;
+      const fontCache = new Map<string, any>();
+      const getFont = async (family: string) => {
+        const name = /courier|mono/i.test(family) ? StandardFonts.Courier :
+          /times|serif/i.test(family) ? StandardFonts.TimesRoman : StandardFonts.Helvetica;
+        if (!fontCache.has(name)) fontCache.set(name, await out.embedFont(name));
+        return fontCache.get(name);
+      };
       const pages = out.getPages();
       for (const block of blocks.filter((b) => b.isNew || b.value !== b.original)) {
         const targetPage = pages[block.page - 1];
         if (!targetPage) continue;
         const pageHeight = targetPage.getHeight();
-        const x = block.isNew ? block.x / scale : block.baselineX;
-        const y = block.isNew ? pageHeight - (block.y + block.height) / scale : block.baselineY - 2;
-        if (!block.isNew) {
-          targetPage.drawRectangle({
-            x: Math.max(0, x - 1), y: Math.max(0, y - 2),
-            width: Math.max(10, block.width / scale + 3), height: Math.max(8, block.height / scale + 4),
-            color: rgb(1, 1, 1), opacity: 1
+        const x = block.baselineX;
+        const y = block.baselineY - Math.max(1, block.pdfFontSize * .18);
+        const scale = block.pageScale || 1.15;
+        const boxWidth = Math.max(10, block.width / scale);
+        const boxHeight = Math.max(8, block.height / scale);
+        const bg = pdfColor(block.backgroundColor || "#ffffff");
+        const ink = pdfColor(block.textColor || "#202124");
+        const font = await getFont(block.fontFamily || "Helvetica");
+        targetPage.drawRectangle({
+          x: Math.max(0, x - 1), y: Math.max(0, y - block.pdfFontSize * .22),
+          width: boxWidth + 3, height: boxHeight + block.pdfFontSize * .35,
+          color: rgb(bg.r, bg.g, bg.b), opacity: 1
+        });
+        if (block.value.trim()) {
+          const measured = font.widthOfTextAtSize(block.value, block.pdfFontSize);
+          const fittedSize = measured > boxWidth ? block.pdfFontSize * (boxWidth / measured) : block.pdfFontSize;
+          targetPage.drawText(block.value, {
+            x: Math.max(0, x), y: Math.max(0, y), size: Math.max(4, fittedSize),
+            font, color: rgb(ink.r, ink.g, ink.b)
           });
         }
-        if (block.value.trim()) targetPage.drawText(block.value, {
-          x: Math.max(0, x), y: Math.max(0, y), size: Math.max(6, block.fontSize / scale),
-          font, color: rgb(0.12, 0.13, 0.16), maxWidth: Math.max(20, block.width / scale + 40)
-        });
       }
       const result = await out.save();
       const blob = new Blob([result as BlobPart], { type: "application/pdf" });
@@ -206,8 +268,8 @@ export default function Home() {
                   {pageBlocks.map((block) => (
                     <button key={block.id} onClick={() => { setSelected(block.id); setTool("select"); }}
                       title={block.value}
-                      className={`pdf-text-hit ${selected === block.id ? "selected" : ""}`}
-                      style={{ left: block.x, top: block.y, width: Math.max(block.width, 10), height: Math.max(block.height, 12), fontSize: block.fontSize, textAlign: "left" }}>
+                      className={`pdf-text-hit ${selected === block.id ? "selected" : ""} ${block.value !== block.original || block.isNew ? "pdf-text-edited" : ""}`}
+                      style={{ left: block.x, top: block.y, width: Math.max(block.width, 10), height: Math.max(block.height, 12), fontSize: block.fontSize, textAlign: "left", color: block.textColor, backgroundColor: block.value !== block.original || block.isNew ? block.backgroundColor : "transparent" }}>
                       {block.value}
                     </button>
                   ))}
@@ -229,8 +291,8 @@ export default function Home() {
               {selectedBlock ? (
                 <div className="space-y-5 p-5">
                   <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Conteúdo do texto</label><textarea value={selectedBlock.value} onChange={(e) => updateSelected(e.target.value)} rows={4} className="w-full resize-y rounded-lg border border-line bg-[#111318] p-3 text-sm text-zinc-100 outline-none focus:border-violet-400" /></div>
-                  <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tipografia</label><div className="flex items-center justify-between rounded-lg border border-line bg-[#111318] p-2.5 text-sm"><span>Helvetica (aproximada)</span><ChevronDown size={14} className="text-zinc-500"/></div></div>
-                  <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tamanho estimado</label><div className="flex items-center gap-2 rounded-lg border border-line bg-[#111318] px-3 py-2 text-sm">{Math.round(selectedBlock.fontSize)} px <span className="ml-auto text-xs text-zinc-500">Original</span></div></div>
+                  <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tipografia</label><div className="flex items-center justify-between rounded-lg border border-line bg-[#111318] p-2.5 text-sm"><span>{selectedBlock.fontFamily} (estimada)</span><ChevronDown size={14} className="text-zinc-500"/></div></div>
+                  <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tamanho estimado</label><div className="flex items-center gap-2 rounded-lg border border-line bg-[#111318] px-3 py-2 text-sm">{Math.round(selectedBlock.pdfFontSize * 100) / 100} pt <span className="ml-auto text-xs text-zinc-500">Estimado</span></div></div>
                   <div className="rounded-lg bg-violet-400/10 p-3 text-xs leading-relaxed text-violet-200"><Sparkles size={14} className="mb-2"/> A edição visual recompõe o trecho selecionado na exportação. A fidelidade depende das fontes e da estrutura do PDF original.</div>
                   <button onClick={() => { setBlocks((items) => items.filter((b) => b.id !== selected)); setSelected(null); setSaved(false); }} className="w-full rounded-lg border border-red-400/20 py-2.5 text-sm text-red-300 hover:bg-red-400/10">Remover texto selecionado</button>
                 </div>
