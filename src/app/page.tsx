@@ -271,10 +271,22 @@ export default function Home() {
                   {pageBlocks.map((block) => (
                     <button key={block.id} onClick={() => { setSelected(block.id); setTool("select"); }}
                       title={block.value}
-                      className={`pdf-text-hit ${selected === block.id ? "selected" : ""} ${block.value !== block.original || block.isNew ? "pdf-text-edited" : ""}`}
-                      style={{ left: block.x, top: block.y, width: Math.max(block.width, 10), height: Math.max(block.height, 12), fontSize: block.fontSize, textAlign: "left", color: block.textColor, backgroundColor: block.value !== block.original || block.isNew ? block.backgroundColor : "transparent" }}>
-                      {block.value}
+                      aria-label={`Selecionar texto: ${block.original.slice(0, 80)}`}
+                      className={`pdf-text-hit ${selected === block.id ? "selected" : ""}`}
+                      style={{ left: block.x, top: block.y, width: Math.max(block.width, 10), height: Math.max(block.height, 12), fontSize: block.fontSize, color: "transparent", backgroundColor: "transparent", zIndex: selected === block.id ? 3 : 1 }}>
                     </button>
+                  ))}
+                  {pageBlocks.filter((block) => block.isNew || block.value !== block.original).map((block) => (
+                    <div key={`preview-${block.id}`} className="pdf-live-preview"
+                      aria-live={selected === block.id ? "polite" : "off"}
+                      style={{
+                        left: block.x, top: block.y, width: Math.max(block.width, 10), minHeight: Math.max(block.height, 12),
+                        fontSize: block.fontSize, lineHeight: 1.15, fontFamily: block.fontFamily,
+                        color: block.textColor, backgroundColor: block.backgroundColor,
+                        zIndex: selected === block.id ? 8 : 6
+                      }}>
+                      {block.value}
+                    </div>
                   ))}
                   {selectedBlock && selectedBlock.page === page && (
                     <div className="absolute z-20" style={{ left: Math.max(0, selectedBlock.x), top: Math.max(0, selectedBlock.y - 38) }}>
