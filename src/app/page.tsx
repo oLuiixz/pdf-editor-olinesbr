@@ -13,7 +13,7 @@ type TextBlock = {
   x: number; y: number; width: number; height: number; fontSize: number;
   baselineX: number; baselineY: number; isNew?: boolean;
   pdfFontSize: number; pdfWidth: number; pageScale: number; fontFamily: string;
-  backgroundColor: string; textColor: string;
+  backgroundColor: string; textColor: string; textAlign?: "left" | "center" | "right";
 };
 
 function colorAt(canvas: HTMLCanvasElement, x: number, y: number): string {
@@ -151,6 +151,20 @@ export default function Home() {
     setSaved(false);
   };
 
+  const updateSelectedStyle = (patch: Partial<TextBlock>) => {
+    if (!selected) return;
+    setBlocks((items) => items.map((b) => {
+      if (b.id !== selected) return b;
+      const next = { ...b, ...patch };
+      if (patch.pdfFontSize !== undefined) next.fontSize = patch.pdfFontSize * (b.pageScale || 1);
+      if (patch.fontSize !== undefined) next.pdfFontSize = patch.fontSize / (b.pageScale || 1);
+      if (patch.pdfWidth !== undefined) next.width = patch.pdfWidth * (b.pageScale || 1);
+      if (patch.width !== undefined) next.pdfWidth = patch.width / (b.pageScale || 1);
+      return next;
+    }));
+    setSaved(false);
+  };
+
   const addText = () => {
     const item: TextBlock = {
       id: `new-${Date.now()}`, page, original: "", value: "Novo texto",
@@ -196,8 +210,11 @@ export default function Home() {
         if (block.value.trim()) {
           const measured = font.widthOfTextAtSize(block.value, block.pdfFontSize);
           const fittedSize = measured > boxWidth ? block.pdfFontSize * (boxWidth / measured) : block.pdfFontSize;
+          const fittedWidth = font.widthOfTextAtSize(block.value, fittedSize);
+          const alignedX = block.textAlign === "center" ? x + (boxWidth - fittedWidth) / 2 :
+            block.textAlign === "right" ? x + boxWidth - fittedWidth : x;
           targetPage.drawText(block.value, {
-            x: Math.max(0, x), y: Math.max(0, y), size: Math.max(4, fittedSize),
+            x: Math.max(0, alignedX), y: Math.max(0, y), size: Math.max(4, fittedSize),
             font, color: rgb(ink.r, ink.g, ink.b)
           });
         }
@@ -282,7 +299,7 @@ export default function Home() {
                       style={{
                         left: block.x, top: block.y, width: Math.max(block.width, 10), minHeight: Math.max(block.height, 12),
                         fontSize: block.fontSize, lineHeight: 1.15, fontFamily: block.fontFamily,
-                        color: block.textColor, backgroundColor: block.backgroundColor,
+                        color: block.textColor, backgroundColor: block.backgroundColor, textAlign: block.textAlign || "left",
                         zIndex: selected === block.id ? 8 : 6
                       }}>
                       {block.value}
@@ -306,8 +323,40 @@ export default function Home() {
               {selectedBlock ? (
                 <div className="space-y-5 p-5">
                   <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Conteúdo do texto</label><textarea value={selectedBlock.value} onChange={(e) => updateSelected(e.target.value)} rows={4} className="w-full resize-y rounded-lg border border-line bg-[#111318] p-3 text-sm text-zinc-100 outline-none focus:border-violet-400" /></div>
-                  <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tipografia</label><div className="flex items-center justify-between rounded-lg border border-line bg-[#111318] p-2.5 text-sm"><span>{selectedBlock.fontFamily} (estimada)</span><ChevronDown size={14} className="text-zinc-500"/></div></div>
-                  <div><label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tamanho estimado</label><div className="flex items-center gap-2 rounded-lg border border-line bg-[#111318] px-3 py-2 text-sm">{Math.round(selectedBlock.pdfFontSize * 100) / 100} pt <span className="ml-auto text-xs text-zinc-500">Estimado</span></div></div>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Fonte</label>
+                    <select value={selectedBlock.fontFamily} onChange={(e) => updateSelectedStyle({ fontFamily: e.target.value })} className="w-full rounded-lg border border-line bg-[#111318] p-2.5 text-sm text-zinc-100 outline-none focus:border-violet-400">
+                      <option value="Helvetica">Arial / Helvetica</option>
+                      <option value="Times New Roman">Times New Roman</option>
+                      <option value="Courier New">Courier New</option>
+                      <option value="Georgia">Georgia</option>
+                      <option value="Verdana">Verdana</option>
+                    </select>
+                    <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-500">A fonte original é estimada. Escolha a substituta mais próxima.</p>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tamanho (pt)</label>
+                    <input type="number" min="4" max="144" step="0.5" value={Number(selectedBlock.pdfFontSize.toFixed(1))} onChange={(e) => updateSelectedStyle({ pdfFontSize: Math.max(4, Math.min(144, Number(e.target.value) || 4)) })} className="w-full rounded-lg border border-line bg-[#111318] px-3 py-2.5 text-sm outline-none focus:border-violet-400"/>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Largura do texto</label>
+                    <input type="range" min="20" max="900" step="1" value={Math.round(selectedBlock.width)} onChange={(e) => updateSelectedStyle({ width: Number(e.target.value) })} className="w-full accent-violet-400"/>
+                    <div className="text-right text-xs text-zinc-500">{Math.round(selectedBlock.width)} px na página</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cor do texto
+                      <input type="color" value={selectedBlock.textColor} onChange={(e) => updateSelectedStyle({ textColor: e.target.value })} className="mt-2 h-10 w-full cursor-pointer rounded border border-line bg-[#111318] p-1"/>
+                    </label>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Fundo
+                      <input type="color" value={selectedBlock.backgroundColor} onChange={(e) => updateSelectedStyle({ backgroundColor: e.target.value })} className="mt-2 h-10 w-full cursor-pointer rounded border border-line bg-[#111318] p-1"/>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Alinhamento</label>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(["left", "center", "right"] as const).map((align) => <button key={align} onClick={() => updateSelectedStyle({ textAlign: align })} className={`rounded-lg border py-2 text-xs ${(selectedBlock.textAlign || "left") === align ? "border-violet-400 bg-violet-400/10 text-violet-200" : "border-line text-zinc-400"}`}>{align === "left" ? "Esquerda" : align === "center" ? "Centro" : "Direita"}</button>)}
+                    </div>
+                  </div>
                   <div className="rounded-lg bg-violet-400/10 p-3 text-xs leading-relaxed text-violet-200"><Sparkles size={14} className="mb-2"/> A edição visual recompõe o trecho selecionado na exportação. A fidelidade depende das fontes e da estrutura do PDF original.</div>
                   <button onClick={() => { setBlocks((items) => items.filter((b) => b.id !== selected)); setSelected(null); setSaved(false); }} className="w-full rounded-lg border border-red-400/20 py-2.5 text-sm text-red-300 hover:bg-red-400/10">Remover texto selecionado</button>
                 </div>
