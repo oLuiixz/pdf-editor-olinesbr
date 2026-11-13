@@ -12,7 +12,7 @@ type TextBlock = {
   id: string; page: number; original: string; value: string;
   x: number; y: number; width: number; height: number; fontSize: number;
   baselineX: number; baselineY: number; isNew?: boolean;
-  pdfFontSize: number; pageScale: number; fontFamily: string;
+  pdfFontSize: number; pdfWidth: number; pageScale: number; fontFamily: string;
   backgroundColor: string; textColor: string;
 };
 
@@ -27,6 +27,7 @@ function colorAt(canvas: HTMLCanvasElement, x: number, y: number): string {
 
 function sampleTextColors(canvas: HTMLCanvasElement, x: number, y: number, width: number, height: number) {
   const bg = colorAt(canvas, x + Math.max(1, width * .12), Math.max(0, y - 2));
+  const bgRgb = [parseInt(bg.slice(1,3),16), parseInt(bg.slice(3,5),16), parseInt(bg.slice(5,7),16)];
   const ctx = canvas.getContext("2d");
   if (!ctx) return { backgroundColor: bg, textColor: "#202124" };
   const left = Math.max(0, Math.floor(x));
@@ -37,7 +38,7 @@ function sampleTextColors(canvas: HTMLCanvasElement, x: number, y: number, width
   const candidates: number[][] = [];
   for (let i = 0; i < pixels.length; i += 4) {
     const r=pixels[i], g=pixels[i+1], b=pixels[i+2];
-    if (Math.abs(r-255)+Math.abs(g-255)+Math.abs(b-255) > 100) candidates.push([r,g,b]);
+    if (Math.abs(r-bgRgb[0])+Math.abs(g-bgRgb[1])+Math.abs(b-bgRgb[2]) > 70) candidates.push([r,g,b]);
   }
   if (!candidates.length) return { backgroundColor: bg, textColor: "#202124" };
   candidates.sort((a,b) => (a[0]+a[1]+a[2])-(b[0]+b[1]+b[2]));
@@ -61,6 +62,7 @@ export default function Home() {
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(0);
+  const [currentPageHeight, setCurrentPageHeight] = useState(792);
   const [zoom, setZoom] = useState(1);
   const [blocks, setBlocks] = useState<TextBlock[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -95,6 +97,7 @@ export default function Home() {
       try {
         const pdfPage = await pdfDoc.getPage(page);
         const viewport = pdfPage.getViewport({ scale: 1.15 * zoom });
+        setCurrentPageHeight(pdfPage.view[3] - pdfPage.view[1]);
         const canvas = canvasRef.current;
         const context = canvas?.getContext("2d");
         if (!canvas || !context) return;
@@ -118,7 +121,7 @@ export default function Home() {
           next.push({
             id: `p${page}-t${i}`, page, original: item.str, value: item.str,
             x: point[0], y: point[1] - height, width, height, fontSize,
-            baselineX: tx[4], baselineY: tx[5], pdfFontSize, pageScale: viewport.scale,
+            baselineX: tx[4], baselineY: tx[5], pdfFontSize, pdfWidth: Math.max(2, item.width || item.str.length * pdfFontSize * .45), pageScale: viewport.scale,
             fontFamily: style.fontFamily || "Helvetica",
             backgroundColor: colors.backgroundColor, textColor: colors.textColor
           });
@@ -132,7 +135,7 @@ export default function Home() {
           const newItems = current.filter((b) => b.page === page && b.isNew).map((b) => {
             const point = viewport.convertToViewportPoint(b.baselineX, b.baselineY);
             const height = Math.max(7, b.pdfFontSize * viewport.scale * 1.2);
-            return { ...b, x: point[0], y: point[1] - height, fontSize: b.pdfFontSize * viewport.scale, height, pageScale: viewport.scale };
+            return { ...b, x: point[0], y: point[1] - height, width: b.pdfWidth * viewport.scale, fontSize: b.pdfFontSize * viewport.scale, height, pageScale: viewport.scale };
           });
           return [...current.filter((b) => b.page !== page), ...refreshed, ...newItems];
         });
@@ -152,8 +155,8 @@ export default function Home() {
     const item: TextBlock = {
       id: `new-${Date.now()}`, page, original: "", value: "Novo texto",
       x: 90, y: 110, width: 180, height: 28, fontSize: 18,
-      baselineX: 90 / (1.15 * zoom), baselineY: 760 - 138 / (1.15 * zoom), isNew: true,
-      pdfFontSize: 14, pageScale: 1.15 * zoom, fontFamily: "Helvetica",
+      baselineX: 90 / (1.15 * zoom), baselineY: currentPageHeight - 138 / (1.15 * zoom), isNew: true,
+      pdfFontSize: 14, pdfWidth: 150, pageScale: 1.15 * zoom, fontFamily: "Helvetica",
       backgroundColor: "#ffffff", textColor: "#202124"
     };
     setBlocks((items) => [...items, item]); setSelected(item.id); setTool("select"); setSaved(false);
@@ -180,7 +183,7 @@ export default function Home() {
         const x = block.baselineX;
         const y = block.baselineY - Math.max(1, block.pdfFontSize * .18);
         const scale = block.pageScale || 1.15;
-        const boxWidth = Math.max(10, block.width / scale);
+        const boxWidth = Math.max(10, block.pdfWidth);
         const boxHeight = Math.max(8, block.height / scale);
         const bg = pdfColor(block.backgroundColor || "#ffffff");
         const ink = pdfColor(block.textColor || "#202124");
