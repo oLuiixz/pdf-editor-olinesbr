@@ -2,7 +2,7 @@
   "name": "pdf-editor-olinesbr",
   "version": "0.1.0",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start", "lint": "next lint" },
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
   "dependencies": {
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
