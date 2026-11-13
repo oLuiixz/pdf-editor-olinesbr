@@ -13,4 +13,5 @@ button { cursor: pointer; }
 .pdf-page { position: relative; background: white; box-shadow: 0 8px 30px rgba(18,20,25,.16); }
 .pdf-text-hit { position: absolute; white-space: pre; transform-origin: left top; color: transparent; border: 1px solid transparent; cursor: text; line-height: 1.15; }
 .pdf-text-hit:hover, .pdf-text-hit.selected { background: rgba(139,124,255,.12); border: 1px solid rgba(112,94,240,.75); border-radius: 2px; }
+.pdf-live-preview { position: absolute; display: block; box-sizing: border-box; margin: 0; padding: 0; border: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; pointer-events: none; transform-origin: left top; font-weight: 400; letter-spacing: normal; }
 .scrollbar-thin { scrollbar-width: thin; scrollbar-color: #454955 transparent; }
