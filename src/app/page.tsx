@@ -81,7 +81,14 @@ export default function Home() {
             baselineX: tx[4], baselineY: tx[5]
           });
         }
-        setBlocks((current) => [...current.filter((b) => b.page !== page), ...next]);
+        setBlocks((current) => {
+          const previous = new Map(current.filter((b) => b.page === page).map((b) => [b.id, b]));
+          const refreshed = next.map((b) => {
+            const old = previous.get(b.id);
+            return old ? { ...b, value: old.value } : b;
+          });
+          return [...current.filter((b) => b.page !== page), ...refreshed];
+        });
       } catch { setError("Falha ao renderizar esta página."); }
     }
     render();
@@ -111,19 +118,21 @@ export default function Home() {
       const out = await PDFDocument.load(pdfBytes);
       const font = await out.embedFont(StandardFonts.Helvetica);
       const scale = 1.15 * zoom;
-      const currentPage = out.getPages()[page - 1];
-      const pageHeight = currentPage.getHeight();
-      for (const block of blocks.filter((b) => b.page === page && (b.isNew || b.value !== b.original))) {
+      const pages = out.getPages();
+      for (const block of blocks.filter((b) => b.isNew || b.value !== b.original)) {
+        const targetPage = pages[block.page - 1];
+        if (!targetPage) continue;
+        const pageHeight = targetPage.getHeight();
         const x = block.isNew ? block.x / scale : block.baselineX;
         const y = block.isNew ? pageHeight - (block.y + block.height) / scale : block.baselineY - 2;
         if (!block.isNew) {
-          currentPage.drawRectangle({
+          targetPage.drawRectangle({
             x: Math.max(0, x - 1), y: Math.max(0, y - 2),
             width: Math.max(10, block.width / scale + 3), height: Math.max(8, block.height / scale + 4),
             color: rgb(1, 1, 1), opacity: 1
           });
         }
-        if (block.value.trim()) currentPage.drawText(block.value, {
+        if (block.value.trim()) targetPage.drawText(block.value, {
           x: Math.max(0, x), y: Math.max(0, y), size: Math.max(6, block.fontSize / scale),
           font, color: rgb(0.12, 0.13, 0.16), maxWidth: Math.max(20, block.width / scale + 40)
         });
