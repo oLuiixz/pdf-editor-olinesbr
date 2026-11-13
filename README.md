@@ -4,8 +4,8 @@ Editor de PDF com identidade visual híbrida (workspace escuro + páginas claras
 
 ## Stack
 - Next.js + React + TypeScript
-- PDF.js para renderização e extração de blocos de texto
-- pdf-lib para exportação e manipulação de páginas
+- PDF.js para renderização, extração de blocos e metadados tipográficos
+- pdf-lib para reconstrução visual e exportação
 - Tailwind CSS + Lucide
 
 ## Desenvolvimento
@@ -14,15 +14,28 @@ npm install
 npm run dev
 ```
 
-## Escopo inicial
-- Importação local de PDFs
-- Renderização paginada e seleção de blocos de texto extraídos
-- Edição visual de texto e valores
-- Inclusão de texto livre
-- Exportação do PDF com as alterações aplicadas
-- Zoom, navegação e painel de propriedades
+## Funcionalidades disponíveis
+- Importação local de PDFs, sem envio do arquivo para servidor
+- Renderização e navegação entre páginas
+- Seleção de blocos de texto extraídos da camada textual
+- Edição de textos e valores existentes
+- Inclusão e remoção de textos
+- Estimativa de família tipográfica, tamanho e cor do texto
+- Amostragem da cor de fundo próxima ao bloco para reconstrução visual
+- Exportação de alterações em todas as páginas
+- Ajuste de zoom e painel de propriedades
 
-## Limitação técnica importante
-PDFs não funcionam como documentos de texto convencionais. PDF.js consegue renderizar e localizar blocos de texto, mas a edição universal do conteúdo original depende da estrutura interna, das fontes incorporadas e dos operadores do PDF. Nesta primeira base, alterações de texto são aplicadas visualmente sobre a área original durante a exportação; não prometemos reescrever os operadores/fontes originais em todos os PDFs. PDFs digitalizados não terão reconhecimento automático porque OCR foi explicitamente desativado.
+## Como a edição funciona nesta versão
+PDFs não são documentos de texto convencionais. O Forma usa PDF.js para localizar e medir blocos de texto e PDF-Lib para aplicar a alteração na exportação. Para um trecho alterado, o editor cobre a região original com uma cor de fundo estimada a partir da renderização e desenha o novo conteúdo com uma fonte padrão aproximada. A família tipográfica é inferida e mapeada para fontes padrão (Helvetica, Times ou Courier), e a cor do texto é estimada pelos pixels renderizados.
 
-O próximo ciclo deve evoluir a reconstrução tipográfica, edição de imagens/formulários, operações de página e testes com PDFs financeiros reais.
+Isso melhora a aparência em documentos simples e financeiros, mas **não é uma substituição nativa e universal dos operadores de texto do PDF**. Fontes incorporadas, texto rotacionado, fundos com textura, transparências, gradientes, tabelas complexas e blocos sobrepostos podem exigir ajustes manuais ou não ser reconstruídos perfeitamente. O texto mais longo é reduzido para caber na largura original estimada.
+
+OCR está desativado conforme definido no escopo. PDFs digitalizados sem camada textual não oferecem blocos selecionáveis.
+
+## Próximas evoluções
+- Reconstrução avançada de fontes incorporadas e operadores de texto
+- Ferramentas de movimentação e redimensionamento
+- Gerenciamento de páginas
+- Inserção, substituição e remoção de imagens
+- Histórico de desfazer/refazer
+- Suíte de testes com PDFs reais variados
